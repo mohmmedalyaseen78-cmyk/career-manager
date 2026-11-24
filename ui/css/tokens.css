@@ -1,0 +1,9 @@
+:root{
+--bg:#121416;--s1:#1B1F22;--s2:#24292C;--s3:#2C3236;--line:#343A3E;
+--t1:#F1EEE6;--t2:#C0BDB4;--t3:#8F918E;--t4:#666B6D;
+--gold:#C5A46D;--gold-l:#D8BD8C;--wine:#762F3B;--wine-d:#4B2029;
+--ok:#668A70;--warn:#D0A354;--bad:#B95A54;--info:#8297A0;
+--pitch:#243B31;--pitch-line:#87998B;
+--r:6px;--font:"Segoe UI","IBM Plex Sans Arabic","Noto Sans Arabic","Tahoma","DejaVu Sans",sans-serif;
+--focus:0 0 0 2px var(--bg),0 0 0 4px var(--gold-l);
+}

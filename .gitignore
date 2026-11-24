@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+dist/
+build/
+*.spec
+bench_report.txt
+grafeco_bench_*/

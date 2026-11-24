@@ -1,0 +1,52 @@
+name: Build Career Manager 2026-27 squads and OVR
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_ea:
+        description: 'Try EA public ratings endpoint (1 = yes, 0 = estimates only)'
+        default: '1'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: data_import/requirements.txt
+      - name: Install dependencies
+        run: pip install -r data_import/requirements.txt
+      - name: Build current squads and OVRs
+        run: python data_import/build_squads.py
+        env:
+          USE_EA: ${{ inputs.use_ea }}
+      - name: Show generated coverage and OVR provenance
+        run: |
+          python - <<'PY'
+          import json, pandas as pd
+          from pathlib import Path
+          out = Path('output')
+          cov = pd.read_csv(out / 'coverage_2026-27.csv')
+          meta = json.loads((out / 'DATA_METADATA.json').read_text(encoding='utf-8'))
+          print(cov.to_string(index=False))
+          print('Player rows:', meta.get('total_player_rows'))
+          print('EA official matches:', meta.get('ea_matched_players'))
+          print('Estimated OVRs:', meta.get('estimated_players'))
+          PY
+      - name: Upload generated data files
+        uses: actions/upload-artifact@v4
+        with:
+          name: career-manager-2026-27-rosters-and-ovr
+          path: output/
+          if-no-files-found: error
+          retention-days: 30

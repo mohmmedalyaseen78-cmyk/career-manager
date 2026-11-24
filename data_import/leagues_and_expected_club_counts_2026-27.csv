@@ -1,0 +1,11 @@
+﻿country,league,division,expected_clubs
+England,Premier League,1,20
+England,Championship,2,24
+Spain,LaLiga,1,20
+Spain,Segunda División,2,22
+Germany,Bundesliga,1,18
+Germany,2. Bundesliga,2,18
+Italy,Serie A,1,20
+Italy,Serie B,2,20
+France,Ligue 1,1,18
+France,Ligue 2,2,18
