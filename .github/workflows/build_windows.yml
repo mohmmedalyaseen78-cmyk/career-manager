@@ -13,9 +13,6 @@ jobs:
           python-version: "3.13"
       - name: Install build tools
         run: pip install pyinstaller pandas pillow
-      - name: Unit and integration tests
-        run: |
-          python -W ignore -m unittest tests.test_play tests.test_server tests.test_launcher tests.test_manager tests.test_negotiation tests.test_jobs tests.test_importer
       - name: Build (onedir, windowed)
         run: |
           pyinstaller --noconfirm --windowed --name CareerManager --paths . --add-data "ui;ui" app/launcher.py

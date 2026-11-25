@@ -99,7 +99,7 @@ def advance_matchday(con, formation="4-3-3", tactics=None, user_detailed=True, u
                 con.executemany("INSERT INTO match_team_stats VALUES(?,?,?)",
                                 [(f["id"], t["club_id"], json.dumps(t)) for t in res["team_stats"]])
                 for p in res["players"]:
-                    if p["minutes"] > 0:
+                    if p["minutes"] > 0 and f["comp"] == "league":
                         _upsert_stats(con, season, p["player_id"], p["club_id"], p["minutes"], p["goals"],
                                       p["assists"], p["yc"], p["rc"], p["rating"])
                 summary["user"] = dict(fixture_id=f["id"], home=hid, away=aid, score=(hg, ag), motm=res["motm"])
@@ -119,9 +119,14 @@ def advance_matchday(con, formation="4-3-3", tactics=None, user_detailed=True, u
                             scorers.setdefault(asst, [0, 0])[1] += 1
                     for s, p in lu:
                         g, a = scorers.get(p["id"], [0, 0])
-                        _upsert_stats(con, season, p["id"], cid, 90, g, a)
+                        if f["comp"] == "league":
+                            _upsert_stats(con, season, p["id"], cid, 90, g, a)
+            if f["comp"] != "league":
+                from . import comps
+                comps.resolve_draw(con, f, hg, ag, rng)
             con.execute("UPDATE fixtures SET played=1 WHERE id=?", (f["id"],))
-            _update_table(con, season, f["league_id"], hid, aid, hg, ag)
+            if f["comp"] == "league":
+                _update_table(con, season, f["league_id"], hid, aid, hg, ag)
             summary["played"] += 1
         con.execute("UPDATE career_info SET cur_date=?", (date,))
     return summary

@@ -50,6 +50,9 @@ class TestServer(unittest.TestCase):
         mk = self.call("market?grp=FW&age=30&ovr=60", get=True)
         self.assertTrue(mk["players"])
         p = mk["players"][0]
+        closed = self.call("neg/start", dict(kind="buy", player_id=p["id"]))
+        self.assertIn("error", closed)  # window closed in early season
+        self.game.con.execute("UPDATE career_info SET cur_date='2026-07-20'"); self.game.con.commit()
         nv = self.call("neg/start", dict(kind="buy", player_id=p["id"]))
         self.assertNotIn("error", nv, nv)
         self.assertIn("stated_ask", nv)
@@ -67,7 +70,7 @@ class TestServer(unittest.TestCase):
             if r.get("finished"):
                 break
             n += 1
-            self.assertLess(n, 60)
+            self.assertLess(n, 90)
         self.assertGreaterEqual(n, 30)
         h = self.call("home", get=True)
         self.assertTrue(h["finished"])

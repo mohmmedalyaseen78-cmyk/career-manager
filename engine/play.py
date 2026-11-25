@@ -134,7 +134,11 @@ def offseason(con, on_rows):
         st = stats.get(r["id"])
         share = min(1.0, (st[3] / 90.0) / matches) if st else 0.0
         avg = (st[6] / st[7]) if st and st[7] else 0.0
-        ovr = T.season_development(r["ovr"], r["potential"], age, r["growth"] or 1, share, avg, 0.6, r["morale"], r["injury_days"], 0.8, rng)
+        cq = 0.6
+        if r["club_id"] == user:
+            tr = get_training(con)
+            cq += {"low": -0.08, "normal": 0.0, "high": 0.10}[tr["intensity"]] + (0.10 if tr["focus"] == "youth" and age <= 21 else 0)
+        ovr = T.season_development(r["ovr"], r["potential"], age, r["growth"] or 1, share, avg, min(0.95, cq), r["morale"], r["injury_days"], 0.8, rng)
         pot = max(ovr, T.update_potential(r["ovr"], r["potential"], age, share, rng))
         d = ovr - r["ovr"]
         at = r["attrs"]
@@ -169,14 +173,22 @@ def offseason(con, on_rows):
                 cols = list(y)
                 con.execute(f"INSERT INTO gen_players({','.join(cols)}) VALUES({','.join('?' * len(cols))})", [y[c] for c in cols])
                 new += 1
-    return dict(developed=len(upd), new_talents=new)
+    loans = return_loans(con)
+    sc = SCOUT_COST[get_scouting(con)]
+    if sc:
+        f = N.get_finance(con, user)
+        N._set_finance(con, user, max(0, f["transfer_budget"] - sc))
+    return dict(developed=len(upd), new_talents=new, loans_returned=loans)
 
 
 def end_of_season(con):
     """Run end_season then the offseason. Returns summary."""
+    from . import comps
+    comps.record_honours_and_qualifiers(con)
     seen = []
     ns = S.end_season(con, on_season_stats=lambda rows: seen.extend([tuple(r) for r in rows]))
     rep = offseason(con, seen)
+    comps.ensure_season(con)
     J.season_reputation_update(con)
     return dict(new_season=ns, **rep)
 
@@ -232,6 +244,11 @@ def post_day(con, summary):
                 mor = min(95, mor + 3 if pid in played else mor + 1)
             elif lost:
                 mor = max(25, mor - 3 if pid in played else mor - 1)
+            tr = get_training(con)
+            if pid not in played:
+                fit = min(100, fit + {"fitness": 6, "balanced": 2}.get(tr["focus"], 2) - {"low": -3, "normal": 0, "high": 4}[tr["intensity"]])
+            if inj == 0 and rng.random() < {"low": 0.003, "normal": 0.007, "high": 0.016}[tr["intensity"]]:
+                inj = rng.choice([4, 7, 10, 14, 21])
             if pid in ev_inj:
                 inj = ev_inj[pid]
             if stat == 1 and pid not in ev_red:
@@ -242,3 +259,122 @@ def post_day(con, summary):
             if (inj, fit, form, mor, stat) != (p["injury_days"], p["fitness"], p["form"], p["morale"], p["status"]):
                 set_state(con, pid, injury_days=inj, fitness=fit, form=form, morale=mor, status=stat)
     N.settle_due_payments(con)
+
+
+# ---------------------------------------------------------------- transfer window, incoming offers, training, scouting
+SCOUT_COST = [0, 1_000_000, 2_500_000, 5_000_000]   # per season, taken from the transfer budget at rollover
+TRAIN_FOCUS = ("balanced", "attack", "defense", "fitness", "youth")
+TRAIN_INT = ("low", "normal", "high")
+
+
+def window(cur_date):
+    """(open, days_left): summer 1 Jun - 31 Aug, winter 1 - 31 Jan."""
+    from datetime import date
+    d = date.fromisoformat(cur_date)
+    for (m1, d1, m2, d2) in ((6, 1, 8, 31), (1, 1, 1, 31)):
+        a, b = date(d.year, m1, d1), date(d.year, m2, d2)
+        if a <= d <= b:
+            return True, (b - d).days
+    return False, 0
+
+
+def get_training(con):
+    t = get_setting(con, "training", {}) or {}
+    return dict(focus=t.get("focus", "balanced"), intensity=t.get("intensity", "normal"))
+
+
+def set_training(con, focus=None, intensity=None):
+    t = get_training(con)
+    if focus:
+        if focus not in TRAIN_FOCUS:
+            raise ValueError("bad focus")
+        t["focus"] = focus
+    if intensity:
+        if intensity not in TRAIN_INT:
+            raise ValueError("bad intensity")
+        t["intensity"] = intensity
+    put_setting(con, "training", t)
+    return t
+
+
+def get_scouting(con):
+    return int(get_setting(con, "scouting", 0) or 0)
+
+
+def set_scouting(con, level):
+    level = int(level)
+    if not 0 <= level <= 3:
+        raise ValueError("scouting level 0..3")
+    put_setting(con, "scouting", level)
+    return level
+
+
+def generate_incoming(con):
+    """After a matchday: with some probability an AI club bids for one of the user's players (only while the window is open)."""
+    info = con.execute("SELECT club_id,cur_date,seed,season FROM career_info").fetchone()
+    open_, left = window(info["cur_date"])
+    if not open_:
+        return None
+    N.ensure_schema(con)
+    active = [r for r in con.execute("SELECT state FROM negotiation WHERE status='active'")]
+    sells = [s for s in (N.from_json(r[0]) for r in active) if s["kind"] == "sell"]
+    if len(sells) >= 3:
+        return None
+    rng = random.Random(f"{info['seed']}:{info['cur_date']}:incoming")
+    if rng.random() > 0.35:
+        return None
+    user = info["club_id"]
+    sq = sorted(db.squad(con, user), key=lambda p: -p["ovr"])
+    already = {s["ctx"]["player"]["id"] for s in sells}
+    pool = [p for p in sq[:20] if p["id"] not in already and p["injury_days"] == 0]
+    if not pool:
+        return None
+    p = rng.choice(pool)
+    cands = [r for r in con.execute("SELECT id,reputation FROM world.clubs WHERE id<>?", (user,))]
+    rng.shuffle(cands)
+    diff = get_setting(con, "difficulty", "realistic")
+    for c in cands[:25]:
+        fin = N.get_finance(con, c["id"])
+        if fin["transfer_budget"] < p["value"] * 0.8:
+            continue
+        ctx = N.build_context(con, "sell", p["id"], c["id"], difficulty=diff, window_open=open_, window_days_left=left,
+                              interest=rng.random())
+        st = N.new_negotiation(ctx)
+        if st["current_offer"] > fin["transfer_budget"]:
+            continue
+        st["created"] = info["cur_date"]
+        N.save(con, st)
+        return st["id"]
+    return None
+
+
+def expire_incoming(con, days=14):
+    from datetime import date
+    info = con.execute("SELECT cur_date FROM career_info").fetchone()
+    cur = date.fromisoformat(info["cur_date"])
+    N.ensure_schema(con)
+    for r in con.execute("SELECT id,state FROM negotiation WHERE status='active'").fetchall():
+        st = N.from_json(r["state"])
+        if st["kind"] == "sell" and st.get("created") and (cur - date.fromisoformat(st["created"])).days > days:
+            st["status"] = "failed"
+            st["fail_reason"] = "walked_away"
+            N.save(con, st)
+        if not window(info["cur_date"])[0] and st["kind"] in ("buy", "loan", "sell") and st["status"] == "active":
+            st["status"] = "failed"
+            st["fail_reason"] = "window_closed"
+            N.save(con, st)
+
+
+def return_loans(con):
+    """At rollover loanees go back to their parent club."""
+    N.ensure_schema(con)
+    n = 0
+    with con:
+        for r in con.execute("SELECT player_id,terms FROM deal_terms").fetchall():
+            t = json.loads(r["terms"])
+            if t.get("loan_from"):
+                set_state(con, r["player_id"], club_id=t["loan_from"])
+                t["loan_from"] = None
+                con.execute("UPDATE deal_terms SET terms=? WHERE player_id=?", (json.dumps(t), r["player_id"]))
+                n += 1
+    return n

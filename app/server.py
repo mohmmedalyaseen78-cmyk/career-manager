@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if getattr(sys, "frozen", False):
     ROOT = getattr(sys, "_MEIPASS", ROOT)
 sys.path.insert(0, ROOT)
-from engine import attrs as A, db, jobs as J, manager as M, negotiation as N, play as P, season as S  # noqa: E402
+from engine import attrs as A, comps, db, jobs as J, manager as M, negotiation as N, play as P, season as S  # noqa: E402
 from engine.career import CareerManager  # noqa: E402
 
 POS_GROUP = {"GK": "GK", "CB": "DF", "LB": "DF", "RB": "DF", "CDM": "MF", "CM": "MF", "CAM": "MF", "LM": "MF", "RM": "MF",
@@ -73,6 +73,7 @@ class Game:
         self.cid = cid
         J.ensure_schema(self.con)
         M.ensure_profile(self.con)
+        comps.ensure_season(self.con)
         return self.home()
 
     def new_career(self, club_id, name):
@@ -155,11 +156,11 @@ class Game:
         nxt = None
         if fx:
             opp = fx["away_id"] if fx["home_id"] == user else fx["home_id"]
-            nxt = dict(id=fx["id"], date=fx["date"], round=fx["round"], home=fx["home_id"] == user, opp=opp, opp_name=self.cname(opp),
+            nxt = dict(comp=self.comp_name(fx["league_id"]), id=fx["id"], date=fx["date"], round=fx["round"], home=fx["home_id"] == user, opp=opp, opp_name=self.cname(opp),
                        opp_pos=next((i + 1 for i, r in enumerate(tbl) if r["club_id"] == opp), None))
         last = c.execute("SELECT f.*,r.hg,r.ag FROM fixtures f JOIN results r ON r.fixture_id=f.id WHERE (f.home_id=? OR f.away_id=?) "
                          "ORDER BY f.date DESC LIMIT 1", (user, user)).fetchone()
-        lm = last and dict(date=last["date"], round=last["round"], home=self.cname(last["home_id"]), away=self.cname(last["away_id"]),
+        lm = last and dict(comp=self.comp_name(last["league_id"]), date=last["date"], round=last["round"], home=self.cname(last["home_id"]), away=self.cname(last["away_id"]),
                            hg=last["hg"], ag=last["ag"], fid=last["id"])
         rows = [dict(pos=i + 1, club=self.cname(r["club_id"]), id=r["club_id"], p=r["p"], w=r["w"], d=r["d"], l=r["l"], gf=r["gf"], ga=r["ga"],
                      gd=r["gf"] - r["ga"], pts=r["pts"], me=r["club_id"] == user) for i, r in enumerate(tbl)]
@@ -245,7 +246,11 @@ class Game:
             st = N.from_json(r[1])
             if st["kind"] == kind:
                 return self._nview(st, N.inquire(st) if st["stage"] == "inquiry" else {})
-        ctx = N.build_context(self.con, kind, pid, user, difficulty=P.get_setting(self.con, "difficulty", "realistic"))
+        wopen, wleft = P.window(self.info()["cur_date"])
+        if kind in ("buy", "loan") and not wopen:
+            return dict(error="نافذة الانتقالات مغلقة (تفتح من 1 يونيو إلى 31 أغسطس ومن 1 إلى 31 يناير)")
+        ctx = N.build_context(self.con, kind, pid, user, difficulty=P.get_setting(self.con, "difficulty", "realistic"),
+                              scouting=P.get_scouting(self.con), window_open=wopen or kind == "free_agent", window_days_left=wleft or 30)
         st = N.new_negotiation(ctx)
         inq = N.inquire(st)
         N.save(self.con, st)
@@ -261,6 +266,8 @@ class Game:
                 resp = N.submit_contract_offer(st, offer)
             elif act == "counter":
                 resp = N.accept_counter(st)
+            elif act in ("accept", "reject", "sellcounter"):
+                resp = N.respond_incoming(st, "counter" if act == "sellcounter" else act, int(offer) if offer else None)
             elif act == "confirm":
                 N.confirm(st)
                 st = N.apply_deal(self.con, st)
@@ -286,6 +293,12 @@ class Game:
         N.save(self.con, st)
         return self._nview(st, N.inquire(st))
 
+    def comp_name(self, lid):
+        if lid < 1000:
+            return None
+        r = self.con.execute("SELECT name FROM comp_info WHERE league_id=? ORDER BY season DESC", (lid,)).fetchone()
+        return r[0] if r else None
+
     # ---------- competitions / calendar
     def league(self, lid=None, rnd=None):
         info = self.info()
@@ -305,6 +318,19 @@ class Game:
         leagues = [dict(id=r["id"], name=r["name_ar"] or r["name"], tier=r["tier"], country=r["country"]) for r in self.con.execute("SELECT * FROM world.leagues")]
         return dict(table=rows, round=rnd, rounds=maxr, fixtures=fx, scorers=scorers, league_id=lid, leagues=leagues)
 
+    def cups(self):
+        info = self.info()
+        out = []
+        for ci in self.con.execute("SELECT league_id,name,comp FROM comp_info WHERE season=? ORDER BY comp,league_id", (info["season"],)):
+            v = comps.view(self.con, ci["league_id"])
+            for rd in v["rounds"]:
+                for f in rd["fixtures"]:
+                    f["home"], f["away"] = self.cname(f["home"]), self.cname(f["away"])
+                    f["winner"] = self.cname(f["winner"]) if f["winner"] else None
+            out.append(dict(id=ci["league_id"], name=ci["name"], kind=ci["comp"], rounds=v["rounds"]))
+        hon = [dict(season=r[0], comp=r[1], text=r[2], won=r[3]) for r in self.con.execute("SELECT season,comp_name,result,won FROM club_honours ORDER BY season DESC")]
+        return dict(items=out, honours=hon, status=[dict(comp=a, text=b, won=c) for a, b, c in comps.user_status(self.con, info["club_id"], info["season"])])
+
     def calendar(self):
         info = self.info()
         user = info["club_id"]
@@ -316,7 +342,7 @@ class Game:
             if r["played"]:
                 m, t = (r["hg"], r["ag"]) if home else (r["ag"], r["hg"])
                 res = dict(score=f"{r['hg']} - {r['ag']}", out="w" if m > t else "d" if m == t else "l")
-            out.append(dict(date=r["date"], round=r["round"], home=home, opp=self.cname(opp), result=res))
+            out.append(dict(comp=self.comp_name(r["league_id"]), date=r["date"], round=r["round"], home=home, opp=self.cname(opp), result=res))
         return dict(items=out, today=info["cur_date"])
 
     # ---------- match / days
@@ -328,6 +354,9 @@ class Game:
         if sm is None:
             return dict(finished=True, home=self.home())
         P.post_day(self.con, sm)
+        comps.advance(self.con)
+        P.expire_incoming(self.con)
+        P.generate_incoming(self.con)
         J.generate_offers(self.con)
         self.cm.autosave(self.con)
         return dict(summary=self._summary(sm), home=self.home())
@@ -422,7 +451,7 @@ class Game:
         out = P.end_of_season(self.con)
         self.cm.autosave(self.con, backup=True)
         arch = S.club_archive(self.con)
-        return dict(done=out, last=arch[0] if arch else None, home=self.home())
+        return dict(done=out, last=arch[0] if arch else None, honours=self.cups()["honours"][:6], home=self.home())
 
     def archive(self):
         return dict(items=S.club_archive(self.con))
@@ -442,6 +471,27 @@ class Game:
             r = J.accept_offer(self.con, oid)
             self.cm.autosave(self.con, backup=True)
             return dict(ok=True, home=self.home(), **r)
+
+    def training(self, b=None):
+        if b:
+            P.set_training(self.con, b.get("focus"), b.get("intensity"))
+            if "scouting" in b:
+                P.set_scouting(self.con, b["scouting"])
+        return dict(training=P.get_training(self.con), scouting=P.get_scouting(self.con), scout_cost=P.SCOUT_COST)
+
+    def photo_set(self, b):
+        import base64
+        data = base64.b64decode(b["data"].split(",")[-1])
+        try:
+            M.set_photo(self.con, self.saves, data, declared_name=b.get("name"))
+        except M.ManagerError as e:
+            return dict(error=str(e))
+        self.cm.autosave(self.con)
+        return dict(ok=True, version=M.get_profile(self.con)["photo_version"])
+
+    def photo_remove(self):
+        M.remove_photo(self.con, self.saves)
+        return dict(ok=True)
 
     def set_setting(self, key, val):
         if key == "difficulty" and val in N.DIFFICULTIES:
@@ -555,6 +605,7 @@ def route(g, ep, q, b):
         "match/advance": lambda: g.match_advance(b), "match/act": lambda: g.match_act(b), "match/commit": lambda: g.match_commit(),
         "season/end": lambda: g.season_end(), "archive": lambda: g.archive(),
         "offers": lambda: g.offers(), "offer/act": lambda: g.offer_act(int(b["id"]), b["act"]),
+        "cups": lambda: g.cups(), "training": lambda: g.training(b or None), "photo/set": lambda: g.photo_set(b), "photo/remove": lambda: g.photo_remove(),
         "setting": lambda: g.set_setting(b["key"], b["value"]), "news": lambda: dict(items=g.news()),
     }
     if ep not in table:
