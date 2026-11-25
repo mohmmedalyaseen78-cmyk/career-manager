@@ -1,0 +1,49 @@
+name: Build Career Manager (Windows)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install build tools
+        run: pip install pyinstaller pandas
+      - name: Unit and integration tests
+        run: |
+          python -W ignore -m unittest tests.test_play tests.test_server tests.test_launcher tests.test_manager tests.test_negotiation tests.test_jobs tests.test_importer
+      - name: Build (onedir, windowed)
+        run: |
+          pyinstaller --noconfirm --windowed --name CareerManager --paths . --add-data "ui;ui" app/launcher.py
+      - name: Add data folder and readme
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/CareerManager/data | Out-Null
+          Copy-Item README_AR.md dist/CareerManager/README_AR.md
+          Copy-Item docs/RUN_AND_DATA_AR.txt dist/CareerManager/تعليمات_التشغيل.txt
+      - name: Frozen-app self test (headless, real exe)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist/CareerManager/CareerManager.exe -ArgumentList "--selftest" -Wait -PassThru
+          Write-Host "exit code: $($p.ExitCode)"
+          Get-Content "$env:LOCALAPPDATA/CareerManager/launcher.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - name: Zip portable build
+        shell: pwsh
+        run: Compress-Archive -Path dist/CareerManager -DestinationPath CareerManager-win64-portable.zip
+      - name: Build installer (Inno Setup)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\CareerManager.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CareerManager-windows
+          path: |
+            CareerManager-win64-portable.zip
+            dist_installer/CareerManager-Setup.exe

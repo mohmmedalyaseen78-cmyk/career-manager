@@ -49,7 +49,7 @@ def _fast_events(rng, lineup, goals):
     return out
 
 
-def advance_matchday(con, formation="4-3-3", tactics=None, user_detailed=True):
+def advance_matchday(con, formation="4-3-3", tactics=None, user_detailed=True, user_result=None):
     """Simulate every unplayed fixture on the next date. Only the user's match is detailed.
     All writes happen in ONE transaction (atomic). Returns summary dict."""
     info = _info(con)
@@ -73,12 +73,21 @@ def advance_matchday(con, formation="4-3-3", tactics=None, user_detailed=True):
             rng = random.Random(seed)
             hid, aid = f["home_id"], f["away_id"]
             if user_detailed and user in (hid, aid):
-                hs, as_ = get_squad(hid), get_squad(aid)
-                hl, hb = auto_lineup(hs, formation if hid == user else "4-3-3")
-                al, ab = auto_lineup(as_, formation if aid == user else "4-3-3")
-                H = dict(club_id=hid, lineup=hl, bench=hb, tactics=tactics if hid == user else None)
-                Aw = dict(club_id=aid, lineup=al, bench=ab, tactics=tactics if aid == user else None)
-                res = simulate_detailed(H, Aw, seed)
+                if user_result is not None and user_result[0] == f["id"]:
+                    res = user_result[1]
+                else:
+                    from . import play
+                    prefs = play.get_prefs(con)
+                    hs, as_ = get_squad(hid), get_squad(aid)
+                    if hid == user:
+                        hl, hb = play.user_side(hs, prefs)
+                        al, ab = auto_lineup(as_, "4-3-3")
+                    else:
+                        hl, hb = auto_lineup(hs, "4-3-3")
+                        al, ab = play.user_side(as_, prefs)
+                    H = dict(club_id=hid, lineup=hl, bench=hb, tactics=play.tactics_of(prefs) if hid == user else None)
+                    Aw = dict(club_id=aid, lineup=al, bench=ab, tactics=play.tactics_of(prefs) if aid == user else None)
+                    res = simulate_detailed(H, Aw, seed)
                 hg, ag = res["score"]
                 con.execute("INSERT INTO results VALUES(?,?,?,?,1)", (f["id"], hg, ag, seed))
                 con.executemany("INSERT INTO match_events VALUES(?,?,?,?,?,?)",

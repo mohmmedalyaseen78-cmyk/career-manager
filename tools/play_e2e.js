@@ -1,0 +1,17 @@
+const {chromium}=require('playwright');const path=require('path');
+const out=n=>path.resolve(__dirname,'../ui/screenshots/game/'+n+'.png');
+(async()=>{const b=await chromium.launch();const p=await b.newPage({viewport:{width:1366,height:768}});
+p.setDefaultTimeout(8000);const errs=[];p.on('pageerror',e=>errs.push('PAGEERR '+e.message));p.on('console',m=>m.type()==='error'&&errs.push('CONSOLE '+m.text()));
+const step=async(n,f)=>{try{await f();}catch(e){errs.push('STEP '+n+': '+e.message.split('\n')[0])}};
+await p.goto('http://127.0.0.1:8766/');await p.waitForSelector('#startMenu .mi');await p.screenshot({path:out('01_start')});
+await step('new',async()=>{await p.click('text=مسيرة جديدة');await p.fill('#nm','سامي الحربي');await p.click('#startPanel [data-c]');await p.screenshot({path:out('02_new')});await p.click('#go');await p.waitForSelector('.hero');});
+await p.screenshot({path:out('03_central')});
+await step('squad',async()=>{await p.keyboard.press('2');await p.waitForSelector('.row');await p.screenshot({path:out('04_squad')});await p.click('text=التشكيلة والخطة');await p.waitForSelector('.xi');await p.screenshot({path:out('05_tactics')});await p.click('text=التطوير');await p.waitForSelector('.row');await p.screenshot({path:out('05b_dev')});});
+await step('match',async()=>{await p.keyboard.press('1');await p.click('#play');await p.waitForSelector('#ctl');await p.click('#hf');await p.waitForTimeout(600);await p.screenshot({path:out('06_match_half')});
+ await p.click('[data-t=sub]');const o=await p.$('[data-o]');await o.click();const i=await p.$('#mp [data-i]');if(i)await i.click();await p.waitForTimeout(300);await p.screenshot({path:out('07_match_sub')});await p.click('#en');await p.waitForSelector('#fin');await p.click('#fin');await p.waitForSelector('.dlg');await p.screenshot({path:out('08_report')});await p.click('#dlg .btn.pri');});
+await step('transfers',async()=>{await p.keyboard.press('3');await p.waitForSelector('.row');await p.screenshot({path:out('09_transfers')});await p.click('#neg');await p.waitForSelector('#fee');await p.screenshot({path:out('10_neg_club')});await p.click('text=قدّم العرض');await p.waitForTimeout(500);await p.screenshot({path:out('11_neg_resp')});await p.keyboard.press('Escape');await p.waitForTimeout(300);});
+await step('office',async()=>{await p.keyboard.press('4');await p.waitForSelector('#df');await p.screenshot({path:out('12_office')});});
+await step('comps',async()=>{await p.keyboard.press('5');await p.waitForSelector('.tbl');await p.screenshot({path:out('13_comps')});});
+await step('cal',async()=>{await p.keyboard.press('6');await p.waitForSelector('.tbl');await p.screenshot({path:out('14_calendar')});});
+await step('quick',async()=>{await p.keyboard.press('1');await p.click('#sim');await p.waitForSelector('.dlg');await p.click('#dlg .btn.pri');await p.screenshot({path:out('15_after')});});
+console.log(errs.length?errs.join('\n'):'NO JS ERRORS');await b.close()})();

@@ -40,7 +40,7 @@ FROM main.gen_players g LEFT JOIN main.player_state s ON s.player_id = g.id
 
 
 def open_career_db(career_path, world_path, create=False):
-    con = sqlite3.connect(_uri(career_path, "rwc" if create else "rw"), uri=True)
+    con = sqlite3.connect(_uri(career_path, "rwc" if create else "rw"), uri=True, check_same_thread=False)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     con.execute("PRAGMA journal_mode=WAL")
