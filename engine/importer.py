@@ -176,7 +176,7 @@ def import_world(base_csv, out_path, seed=2026, season=SEASON, fill_gaps=True, s
             con.execute("INSERT INTO players(id,name,name_ar,search,birth_date,nationality,pos,pos2,foot,height,weight,"
                         "weak_foot,skill_moves,club_id,shirt,ovr,potential,growth,attrs,wage,value,contract_end,q_core,"
                         "q_ovr,q_attrs,q_pot,q_money,source_id,ext_id) VALUES(" + ",".join("?" * 29) + ")",
-                        (pid, name, None, normalize(name), birth, nat, pos, ",".join(sec), foot, h, w,
+                        (pid, name, name, normalize(name), birth, nat, pos, ",".join(sec), foot, h, w,
                          min(5, max(1, int(prng.gauss(3, .9)))), min(5, max(1, int(prng.gauss(2.6, .9)))), cid, shirt,
                          ovr, pot, prng.choice([0, 1, 1, 1, 2]), A.pack(attrs), T.weekly_wage(val), val,
                          season + prng.randint(0, 4), bq, q_ovr, Q_ESTIMATED, Q_ESTIMATED, Q_ESTIMATED,
