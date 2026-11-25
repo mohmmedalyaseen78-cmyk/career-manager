@@ -1,0 +1,34 @@
+{
+  "product": "Career Manager",
+  "season": "2026/27",
+  "generated_at_utc": "2026-11-25T10:38:14Z",
+  "roster_source": "OpenFootballBase-Data data-1.24.0",
+  "roster_source_url": "https://github.com/florentfougeres/OpenFootballBase-Data/releases/tag/data-1.24.0",
+  "roster_source_basis": "Wikipedia CC BY-SA 4.0 and Wikidata CC0; attribution and share-alike terms must be checked before redistribution.",
+  "ea_ratings": {
+    "endpoint": "https://drop-api.ea.com/rating/ea-sports-fc",
+    "official_page": "https://www.ea.com/games/ea-sports-fc/ratings",
+    "reported_total_items": 19789,
+    "unique_male_player_items": 17849,
+    "snapshot_fetched_at_utc": "2026-11-25T10:38:06Z",
+    "important_limit": "EA states that the public table reflects Gold/Silver/Bronze Ultimate Team base items at launch; it does not equal dynamic Career Mode form updates.",
+    "status": "FETCHED"
+  },
+  "ea_matched_players": 4670,
+  "estimated_players": 1052,
+  "manual_override_players": 0,
+  "total_player_rows": 5722,
+  "total_clubs_in_source": 198,
+  "expected_clubs": 198,
+  "ovr_policy": "Use matched EA public base-item OVR where unambiguous; otherwise internal estimated OVR. Never describe estimates as official.",
+  "ea_caveat": "EA says its public ratings table reflects Gold/Silver/Bronze Ultimate Team base items at launch, not live form updates in other modes; it is not a promise of identical Career Mode dynamic ratings.",
+  "player_output_columns": [
+    "country",
+    "league",
+    "division",
+    "club",
+    "player",
+    "position_group",
+    "OVR"
+  ]
+}

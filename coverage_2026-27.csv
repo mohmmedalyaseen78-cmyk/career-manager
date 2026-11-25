@@ -1,0 +1,11 @@
+﻿league_code,country,league,expected_clubs,clubs_in_source,clubs_with_rosters,player_rows,competition_list_complete,roster_list_complete,coverage_status
+ENG-PL,England,Premier League,20,20,20,576,True,True,COMPLETE
+ENG-CH,England,Championship,24,24,24,676,True,True,COMPLETE
+ESP-LL,Spain,LaLiga,20,20,20,543,True,True,COMPLETE
+ESP-SD,Spain,Segunda División,22,22,22,598,True,True,COMPLETE
+DEU-BL,Germany,Bundesliga,18,18,18,534,True,True,COMPLETE
+DEU-B2,Germany,2. Bundesliga,18,18,18,532,True,True,COMPLETE
+ITA-SA,Italy,Serie A,20,20,20,613,True,True,COMPLETE
+ITA-SB,Italy,Serie B,20,20,20,619,True,True,COMPLETE
+FRA-L1,France,Ligue 1,18,18,18,545,True,True,COMPLETE
+FRA-L2,France,Ligue 2,18,18,18,486,True,True,COMPLETE
