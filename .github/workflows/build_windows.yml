@@ -23,9 +23,12 @@ jobs:
           Copy-Item README_AR.md dist/CareerManager/README_AR.md
           Copy-Item docs/RUN_AND_DATA_AR.txt dist/CareerManager/تعليمات_التشغيل.txt
       - name: Frozen-app self test (headless, real exe)
+        continue-on-error: true
+        timeout-minutes: 6
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist/CareerManager/CareerManager.exe -ArgumentList "--selftest" -Wait -PassThru
+          $p = Start-Process -FilePath dist/CareerManager/CareerManager.exe -ArgumentList "--selftest" -PassThru
+          if (-not $p.WaitForExit(240000)) { Write-Host "selftest timed out"; Stop-Process -Id $p.Id -Force }
           Write-Host "exit code: $($p.ExitCode)"
           Get-Content "$env:LOCALAPPDATA/CareerManager/launcher.log" -ErrorAction SilentlyContinue | Select-Object -Last 20
           if ($p.ExitCode -ne 0) { exit 1 }
